@@ -1,0 +1,13 @@
+# Frozen RGB-IR intersection dataset for YOLO11-OBB
+path: data
+train: frozen_rgbir/manifests/train.jsonl
+val: frozen_rgbir/manifests/val.jsonl
+test: frozen_rgbir/manifests/test.jsonl
+
+channels: 4
+names:
+  0: car
+  1: truck
+  2: bus
+  3: van
+  4: Freight_car

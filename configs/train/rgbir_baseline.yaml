@@ -1,0 +1,36 @@
+# Formal RGB-IR four-channel early-fusion baseline
+model: third_party/ultralytics/ultralytics/cfg/models/11/yolo11-obb.yaml
+data: configs/data/dronevehicle_rgbir.yaml
+pretrained: weights/yolo11n-obb.pt
+
+project: runs/obb
+name: rgbir_baseline
+
+# Controlled formal experiment settings
+epochs: 200
+batch: 16
+imgsz: 640
+workers: 8
+patience: 50
+optimizer: Adam
+lr0: 0.01
+momentum: 0.937
+weight_decay: 0.0005
+amp: true
+seed: 0
+deterministic: true
+
+# RGB-IR input policy
+cache: false
+hsv_h: 0.0
+hsv_s: 0.0
+hsv_v: 0.0
+bgr: 0.0
+
+# Keep these fixed across baseline, SPD, and DEAB
+fraction: 1.0
+rect: false
+multi_scale: 0.0
+plots: true
+save: true
+val: true

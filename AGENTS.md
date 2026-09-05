@@ -234,3 +234,6 @@ outputs/
 5. RGB/IR 配对和 OBB 标签读取正确
 6. 小数据集 1~2 epoch 可正常训练
 ```
+# 学习笔记
+
+D:\外接大脑\多模态\DroneVehicle.md
