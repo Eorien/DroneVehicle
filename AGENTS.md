@@ -51,7 +51,7 @@ seed = 0
 deterministic = True
 ```
 
-正式实验三组统一使用 `batch=64`。本机 smoke test 可使用 `batch=16` 并缩小数据集、epoch；不得把调试配置当作正式实验配置。正式训练前需在 RTX 4090 上验证 baseline、SPD、SPD+DEAB 均能稳定使用 64；若任一模型显存不足，三组统一降为 32。
+正式实验三组统一使用 `batch=64`。本机 smoke test 可使用 `batch=16` 并缩小数据集、epoch；不得把调试配置当作正式实验配置。允许分阶段训练：每组通过自身本地 smoke test 和 RTX 4090 `batch=64` 预检，并由用户核对该组实验记录后，即可启动该组正式训练。若后续任一模型无法稳定使用 64，三组统一降为 32，已完成的实验也必须重跑。
 
 评价指标至少包括：
 
@@ -178,7 +178,10 @@ ssh autodl
 - 项目工作目录统一使用 `/root/autodl-tmp/DroneVehicle`
 - 高速数据盘 `/root/autodl-tmp` 为 50GB，不同步原始 ZIP 和未入选图像
 - 登录 shell 中 Miniconda 位于 `/root/miniconda3`；非交互命令应使用 `bash -lic` 或完整 Python 路径
-- 当前服务器尚未安装 `uv`、项目依赖和项目代码，安装或同步前必须先获得用户确认
+- 服务器项目已部署到 `/root/autodl-tmp/DroneVehicle`，数据通过 `data -> ../DroneVehicle-data` 软链接接入
+- 服务器使用 `uv 0.11.7` 和项目 `.venv`，环境已锁定为 Python 3.12、PyTorch 2.8.0+cu128、Ultralytics 8.4.140
+- RTX 4090 上 baseline 与 SPD 的 `batch=64, imgsz=640, AMP=True` 单 batch 反向传播预检均通过，峰值约 8.79GB
+- SPD+DEAB 尚未实现和预检，但不阻止已通过自身门禁的 baseline 或 SPD 分阶段训练；每组启动前必须由用户单独核对并批准
 推荐流程：
 
 ```text
@@ -237,7 +240,8 @@ outputs/
    - SPD reshape / channel 变化
    - DEAB 插入位置
    - OBB Detect head
-6. 不自动运行完整 200 epoch 训练。
+6. 未经用户核对该组实验记录并明确批准，不运行完整 200 epoch 训练；获批后允许按实验组分阶段启动。
+   - 启动前必须读取并更新 `docs/formal_experiment_record.md`，记录该组 commit、配置/数据/权重哈希、服务器状态和批准信息。
 7. 不自动下载大型数据集或权重。
 8. 不伪造实验结果。
 9. 每次修改后说明：
@@ -248,18 +252,6 @@ outputs/
 
 ---
 
-## 正式训练前必须通过
-
-至少完成以下 smoke test：
-
-```text
-1. PyTorch 可正常调用本地 GPU
-2. vendored Ultralytics 可正常 import
-3. baseline / SPD / SPD+DEAB 均能成功构建
-4. (B, 4, H, W) 输入可以正常 forward
-5. RGB/IR 配对和 OBB 标签读取正确
-6. 小数据集 1~2 epoch 可正常训练
-```
 # 学习笔记
 
 D:\外接大脑\多模态\DroneVehicle.md

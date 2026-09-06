@@ -86,3 +86,5 @@ uv run python -m scripts.train_rgbir --config configs/train/rgbir_spd.yaml
 ```
 
 权重位于被 Git 忽略的 `weights/`：`yolo11n-obb.pt` 用于训练，`yolo26n.pt` 仅用于 Ultralytics AMP 自检。当前 baseline 和 SPD 工程链路已完成，SPD+DEAB 尚未实现。
+
+正式实验启动门禁、环境指纹和结果模板见 `docs/formal_experiment_record.md`。
