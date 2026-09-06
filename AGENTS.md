@@ -182,8 +182,9 @@ ssh autodl
 - 服务器使用 `uv 0.11.7` 和项目 `.venv`，环境已锁定为 Python 3.12、PyTorch 2.8.0+cu128、Ultralytics 8.4.140
 - RTX 4090 上 baseline 与 SPD 的 `batch=64, imgsz=640, AMP=True` 单 batch 反向传播预检均通过，预检峰值约 8.79GB
 - baseline 已完成 200 epochs、val 和 test：test mAP@0.5:0.95=`0.61035`，正式训练日志峰值显存 20.5GB，产物已同步至本地 `outputs/formal_experiments/rgbir_baseline/`
-- SPD 已于 2026-09-06 18:01 启动正式训练，tmux 会话为 `rgbir_spd`；启动时 commit 为 `bcdd0a44eadcb83d92488c7e6ad3512ccb5997b2`
-- SPD+DEAB 已完成本地实现与 smoke test：单个 DEAB 紧接 Layer 3 SPD 的 P3/8 输出，模型 2,953,165 parameters / 8.8 GFLOPs；待 RTX 4090 `batch=64` 预检
+- SPD 已完成 200 epochs、val 和 test：test mAP@0.5:0.95=`0.61078`，相对 baseline `+0.00042`；正式训练峰值显存 20.3GB，产物已同步至本地 `outputs/formal_experiments/rgbir_spd/`
+- SPD+DEAB 已完成本地实现与 smoke test：单个 DEAB 紧接 Layer 3 SPD 的 P3/8 输出，模型 2,953,165 parameters / 8.8 GFLOPs；RTX 4090 `batch=64` 预检峰值 9.67GB
+- SPD+DEAB 已于 2026-09-06 23:09 启动正式训练，tmux 会话为 `rgbir_spd_deab`；repository commit 为 `b0e13e052548876f09c0e83b37d65a36487de58d`
 - 若 SPD+DEAB 无法稳定使用 `batch=64`，三组统一降为 32，baseline 与 SPD 必须重跑
 推荐流程：
 

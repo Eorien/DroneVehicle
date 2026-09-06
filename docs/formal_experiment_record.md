@@ -1,6 +1,6 @@
 # 正式消融实验记录与启动核对表
 
-> 当前状态：`rgbir_baseline` 与 `rgbir_spd` 已完成正式训练、验证和 test 评估；`rgbir_spd_deab` 已通过本地与 RTX 4090 `batch=64` 预检并获用户批准，等待最终记录 commit 推送后启动。
+> 当前状态：`rgbir_baseline` 与 `rgbir_spd` 已完成正式训练、验证和 test 评估；`rgbir_spd_deab` 已于 2026-09-06 23:09 启动正式训练。
 
 ## 1. 固定实验矩阵
 
@@ -8,7 +8,7 @@
 |---|---|---|---|
 | `rgbir_baseline` | RGB+IR 四通道融合 | 基准组 | 200 epochs、val、test 均已完成 |
 | `rgbir_spd` | 四通道融合 + SPD | Layer 3 的 P2/4→P3/8 下采样改为 SPDConv | 200 epochs、val、test 均已完成 |
-| `rgbir_spd_deab` | 四通道融合 + 同一个 SPD + DEAB | Layer 3 保持同一 SPD，紧接一个 P3/8 DEAB | 本地及 RTX 4090 `batch=64` 预检通过，待启动 |
+| `rgbir_spd_deab` | 四通道融合 + 同一个 SPD + DEAB | Layer 3 保持同一 SPD，紧接一个 P3/8 DEAB | 正式训练中（2026-09-06 23:09 启动） |
 
 对比关系：
 
@@ -215,8 +215,8 @@ SPD+DEAB RTX 4090 预检日志：`runs/logs/rgbir_spd_deab_batch64_precheck_2026
 
 | 字段 | 记录值 |
 |---|---|
-| 批准 | 不思议先生于 2026-09-06 核对 SPD 结果和 OOM 风险后批准 |
-| 计划命令 | `/root/.local/bin/uv run python -m scripts.train_rgbir --config configs/train/rgbir_spd_deab.yaml --device 0 --name rgbir_spd_deab` |
+| 批准 / 启动 | 不思议先生于 2026-09-06 核对 SPD 结果和 OOM 风险后批准；2026-09-06 23:09:17 +08:00 启动 |
+| 完整命令 | `/root/.local/bin/uv run python -m scripts.train_rgbir --config configs/train/rgbir_spd_deab.yaml --device 0 --name rgbir_spd_deab` |
 | 训练代码 commit | `31eb000be586a4c3af7eba54cbcfb866dfc2c6ee` |
 | 配置一致性 | 与 SPD 仅 `model` 和 `name` 不同；模型仅在 Layer 3 SPD 输出后增加 DEAB |
 | 数据 report / checksums | `c8887d31efcb4d6bf62890847e7fb64bb59fe6a5f2e0a42d07d50855b39756f9` / `fd7eaf81719a76a401b97a34a25cc1e8a55b73b847539f2eda0c94376e698bd0` |
@@ -224,9 +224,10 @@ SPD+DEAB RTX 4090 预检日志：`runs/logs/rgbir_spd_deab_batch64_precheck_2026
 | 模型 / 训练 YAML | `0223979f7c09158a6074a28873adc112965c0d479710c713788fb34ddc8c946d` / `701eedac8171fd8770248984aed40e80591e3c1d9d9c5f087d40f5668cf258c9` |
 | 模型 / 迁移 | 2,953,165 params、8.8 GFLOPs；529/561；IR=RGB 卷积权重均值 |
 | RTX 4090 预检 | `batch=64` AMP backward 通过，峰值 9.67GB |
-| 服务器状态 | commit `31eb000...`、Git 干净、GPU 空闲、数据盘剩余 39GB |
+| 服务器状态 | repository commit `b0e13e052548876f09c0e83b37d65a36487de58d`、Git 干净、GPU 启动前空闲、数据盘剩余 39GB |
 | seed / resume | `0` / 否 |
-| 待启动后补填 | 启动时间、最终记录 commit、`args.yaml` SHA-256、启动快照 |
+| `args.yaml` | `acd05986b8778750db1b3f1669cac44b3fbf093b70b349cd7df81a1b7a7b4b62` |
+| 启动快照 | `runs/logs/rgbir_spd_deab_20260906_230917_launch.txt`；SHA-256=`9b219dcafa4c76a2dcce3d5eb55f85671f75fe822499c516d2340e7605935983` |
 
 ## 9. 正式实验结果
 
@@ -297,7 +298,7 @@ SPD+DEAB RTX 4090 预检日志：`runs/logs/rgbir_spd_deab_batch64_precheck_2026
 
 ### 9.3 `rgbir_spd_deab`
 
-本地实现和 RTX 4090 `batch=64` 预检已完成，用户已批准；等待最终记录推送后正式启动。
+正式训练已于 2026-09-06 23:09:17 +08:00 启动，tmux=`rgbir_spd_deab`；结果待完成后回填。
 
 ## 10. 三组测试集结果汇总
 

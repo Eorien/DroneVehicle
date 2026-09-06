@@ -63,8 +63,8 @@ uv sync --locked
 截至 2026-09-06：
 
 - `rgbir_baseline` 已完成 200 epochs、验证集复评和冻结 test 集正式评估；
-- `rgbir_spd` 已于 2026-09-06 18:01 启动 200 epochs 正式训练；
-- `rgbir_spd_deab` 已完成本地实现与 smoke test，待 SPD 训练结束后进行 RTX 4090 `batch=64` 预检。
+- `rgbir_spd` 已完成 200 epochs、val 和 test，test mAP@0.5:0.95=`61.08%`，相对 baseline `+0.04` 个百分点；
+- `rgbir_spd_deab` 已通过本地与 RTX 4090 `batch=64` 预检，并于 2026-09-06 23:09 启动正式训练。
 
 ### `rgbir_baseline` 正式结果
 
