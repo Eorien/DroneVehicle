@@ -2,13 +2,13 @@
 
 ## 项目目标
 
-本项目面向无人机交通场景，基于 **YOLO11-OBB** 实现 **RGB-IR 四通道前期融合小目标检测**。
+本项目面向无人机交通场景，基于 **YOLO11-OBB** 逐步实现 **RGB-IR 四通道前期融合 + SPD + DEAB 小目标检测**。
 
 当前只做 3 组正式实验：
 
 1. `rgbir_baseline`：RGB+IR 四通道前期融合
 2. `rgbir_spd`：四通道融合 + SPD
-3. `rgbir_deab`：四通道融合 + DEAB
+3. `rgbir_spd_deab`：四通道融合 + SPD + DEAB
 
 目标是完成一个控制变量清晰的小型消融实验，不额外引入无关结构或训练策略。
 
@@ -38,7 +38,7 @@ RGB 与 IR 必须严格配对。所有旋转、裁剪、翻转、缩放等几何
 
 ```text
 epochs = 200
-batch = 16
+batch = 64
 imgsz = 640
 workers = 8
 patience = 50
@@ -51,7 +51,7 @@ seed = 0
 deterministic = True
 ```
 
-调试时可以缩小数据集、batch 和 epoch，但不要把调试配置当作正式实验配置。
+正式实验三组统一使用 `batch=64`。本机 smoke test 可使用 `batch=16` 并缩小数据集、epoch；不得把调试配置当作正式实验配置。正式训练前需在 RTX 4090 上验证 baseline、SPD、SPD+DEAB 均能稳定使用 64；若任一模型显存不足，三组统一降为 32。
 
 评价指标至少包括：
 
@@ -82,7 +82,7 @@ Commit: 7401d284e77b58d20f3c59aa1d2fcbb496bb7a0e
 - 不主动升级 Ultralytics
 - 修改前先阅读本地源码
 - 尽量最小化修改
-- 优先通过 YAML / 配置控制 baseline、SPD、DEAB
+- 优先通过 YAML / 配置控制 baseline、SPD、SPD+DEAB
 - 不要复制三份完整模型代码
 - 保持 OBB 检测逻辑不变
 
@@ -116,9 +116,9 @@ YOLO11-OBB 需要从 3 通道输入改为 4 通道输入。
 
 要求：
 
-- 独立可开关
-- 当前只实现一种明确插入方案
-- 不额外派生多个 DEAB 版本，除非明确要求
+- 只用于 `rgbir_spd_deab`，必须与 SPD 同时启用
+- `rgbir_spd_deab` 与 `rgbir_spd` 之间只允许增加 DEAB
+- 当前只实现一种明确插入方案，不额外派生多个 DEAB 版本
 
 ---
 
@@ -153,6 +153,32 @@ RTX 4090 只负责：
 - 验证
 - 导出权重
 
+#### SSH 连接
+
+当前 WSL 的 `~/.ssh/config` 使用以下别名：
+
+```sshconfig
+Host autodl
+    HostName connect.westc.seetacloud.com
+    User root
+    Port 52096
+```
+
+连接命令：
+
+```bash
+ssh autodl
+# 等价于：ssh -p 52096 root@connect.westc.seetacloud.com
+```
+
+规则和环境说明：
+
+- 认证密码不得写入 `AGENTS.md`、脚本、Git 或 shell 命令；连接时交互输入
+- AutoDL 实例重启后 SSH 端口可能变化，连接失败时先到控制台确认并同步更新 `~/.ssh/config` 和本节
+- 项目工作目录统一使用 `/root/autodl-tmp/DroneVehicle`
+- 高速数据盘 `/root/autodl-tmp` 为 50GB，不同步原始 ZIP 和未入选图像
+- 登录 shell 中 Miniconda 位于 `/root/miniconda3`；非交互命令应使用 `bash -lic` 或完整 Python 路径
+- 当前服务器尚未安装 `uv`、项目依赖和项目代码，安装或同步前必须先获得用户确认
 推荐流程：
 
 ```text
@@ -203,7 +229,7 @@ outputs/
 
 1. 修改前先读相关源码，不猜 API 或文件位置。
 2. 只做与当前任务直接相关的最小修改。
-3. baseline / SPD / DEAB 必须严格控制变量。
+3. baseline / SPD / SPD+DEAB 必须严格控制变量。
 4. 优先配置化，不复制整套模型。
 5. 重点检查：
    - 4 通道输入
@@ -229,7 +255,7 @@ outputs/
 ```text
 1. PyTorch 可正常调用本地 GPU
 2. vendored Ultralytics 可正常 import
-3. baseline / SPD / DEAB 均能成功构建
+3. baseline / SPD / SPD+DEAB 均能成功构建
 4. (B, 4, H, W) 输入可以正常 forward
 5. RGB/IR 配对和 OBB 标签读取正确
 6. 小数据集 1~2 epoch 可正常训练

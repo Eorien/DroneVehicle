@@ -1,10 +1,10 @@
-# Formal RGB-IR four-channel early-fusion baseline
-model: third_party/ultralytics/ultralytics/cfg/models/11/yolo11-obb.yaml
+# Formal RGB-IR four-channel early-fusion + SPD experiment
+model: configs/models/yolo11n-obb-rgbir-spd.yaml
 data: configs/data/dronevehicle_rgbir.yaml
 pretrained: weights/yolo11n-obb.pt
 
 project: runs/obb
-name: rgbir_baseline
+name: rgbir_spd
 
 # Controlled formal experiment settings
 epochs: 200

@@ -23,6 +23,7 @@ __all__ = (
     "Index",
     "LightConv",
     "RepConv",
+    "SPDConv",
     "SpatialAttention",
 )
 
@@ -87,6 +88,35 @@ class Conv(nn.Module):
             (torch.Tensor): Output tensor.
         """
         return self.act(self.conv(x))
+
+
+class SPDConv(nn.Module):
+    """Downsample by moving 2x2 spatial neighborhoods to channels before convolution."""
+
+    def __init__(self, c1, c2, k=3, p=None, g=1, d=1, act=True):
+        """Initialize Space-to-Depth rearrangement followed by a stride-1 convolution.
+
+        Args:
+            c1 (int): Number of input channels.
+            c2 (int): Number of output channels.
+            k (int): Convolution kernel size.
+            p (int, optional): Convolution padding.
+            g (int): Number of convolution groups.
+            d (int): Convolution dilation.
+            act (bool | nn.Module): Activation function.
+        """
+        super().__init__()
+        self.space_to_depth = nn.PixelUnshuffle(2)
+        self.conv = Conv(c1 * 4, c2, k, 1, p, g, d, act)
+
+    def forward(self, x):
+        """Apply lossless 2x space-to-depth rearrangement and channel fusion."""
+        if x.ndim != 4:
+            raise ValueError(f"SPDConv expects a 4D NCHW tensor, got shape {tuple(x.shape)}")
+        height, width = x.shape[-2:]
+        if height % 2 or width % 2:
+            raise ValueError(f"SPDConv requires even spatial dimensions, got {(height, width)}")
+        return self.conv(self.space_to_depth(x))
 
 
 class Conv2(Conv):

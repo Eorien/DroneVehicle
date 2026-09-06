@@ -62,6 +62,7 @@ from ultralytics.nn.modules import (
     Pose26,
     RepC3,
     RepConv,
+    SPDConv,
     RepNCSPELAN4,
     RepVGGDW,
     ResNetLayer,
@@ -2011,6 +2012,7 @@ def parse_model(d, ch, verbose=True):
         {
             Classify,
             Conv,
+            SPDConv,
             ConvTranspose,
             GhostConv,
             Bottleneck,

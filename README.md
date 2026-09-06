@@ -1,99 +1,88 @@
 # DroneVehicle RGB-IR OBB
 
-基于 YOLO11-OBB 的 RGB + IR 四通道前期融合小目标检测项目。
+基于 YOLO11n-OBB 的 RGB + IR 四通道前期融合小目标检测。正式实验仅包括 `rgbir_baseline`、`rgbir_spd` 和 `rgbir_spd_deab`。
+
+1. `rgbir_baseline`：四通道融合；
+2. `rgbir_spd`：四通道融合 + SPD；
+3. `rgbir_spd_deab`：四通道融合 + SPD + DEAB。
+
+第 1、2 组用于评估 SPD，第 2、3 组用于评估 DEAB 在 SPD 基础上的增益；不再设置“仅 DEAB”正式实验。
 
 ## 环境
 
 - Python 3.12
 - PyTorch 2.8.0 + CUDA 12.8
-- Ultralytics 8.4.140（本地 `third_party/ultralytics/`）
+- Ultralytics 8.4.140（固定源码：`third_party/ultralytics/`）
 
 ```bash
 uv sync --locked
 ```
 
-## 数据处理
+## 数据
 
-原始 `data/` 始终只读，所有结果均通过脚本重新生成。
-
-### 1. 清洗与格式转换
-
-`scripts/prepare_dronevehicle.py` 完成以下工作：
-
-- 校验 RGB、IR、两套 XML 的文件配对；
-- 统一 5 类名称，将 `bndbox` 和四点多边形转换为 YOLO OBB；
-- 修复越界和点顺序，移除未知、缺失框及零面积目标；
-- 分别保留 RGB、IR 标签，避免在配准确认前错误合并。
+原始 `data/` 保持只读。数据处理分为两步：
 
 ```bash
-.venv/bin/python scripts/prepare_dronevehicle.py \
-  --data-root data \
-  --output-root data/cleaned
+# XML 清洗并转换为 YOLO OBB
+.venv/bin/python scripts/prepare_dronevehicle.py --data-root data --output-root data/cleaned
+
+# 冻结 RGB-IR 严格交集
+.venv/bin/python scripts/freeze_rgbir_labels.py --clean-root data/cleaned --output-root data/frozen_rgbir
 ```
 
-清洗得到 28,439 对图像、953,082 个双模态标注；共移除 82 个无效目标。类别 ID 固定为：
-
-```text
-0 car    1 truck    2 bus    3 van    4 Freight_car
-```
-
-### 2. RGB-IR 严格交集
-
-经过 300 对图像抽检和全量旋转框匹配，正式筛选规则确定为：
-
-1. RGB 与 IR 目标类别相同；
-2. 按旋转 IoU ≥ 0.7 一对一匹配；
-3. 只保留两套标签均 100% 匹配的图像对，避免未匹配目标成为假负样本。
-
-```bash
-.venv/bin/python scripts/freeze_rgbir_labels.py \
-  --clean-root data/cleaned \
-  --output-root data/frozen_rgbir
-```
-
-冻结结果位于 `data/frozen_rgbir/`，采用 RGB OBB 作为唯一监督标签，并保存逐目标匹配记录、统计报告和 SHA-256 校验文件。
-
-冻结子集内匹配框中心偏移的中位数为 0 像素，95% 不超过 3 像素，99% 不超过约 6.1 像素。严格交集规模为：
+交集规则：同类别一对一旋转 IoU ≥ 0.7，且一幅图内 RGB/IR 标签必须 100% 匹配；最终采用 RGB OBB 作为唯一监督标签。
 
 | 划分 | 图像对 | 目标数 |
 |---|---:|---:|
 | train | 5,891 | 92,205 |
 | val | 488 | 7,380 |
 | test | 2,923 | 43,144 |
-| **总计** | **9,302** | **142,729** |
 
-交集训练集类别分布：
+训练集类别分布：`car 75,661`、`truck 5,594`、`bus 5,072`、`van 2,202`、`Freight_car 3,676`。冻结子集 95% 的匹配框中心偏移不超过 3 像素。
 
-| car | truck | bus | van | Freight_car |
-|---:|---:|---:|---:|---:|
-| 75,661 | 5,594 | 5,072 | 2,202 | 3,676 |
+## 四通道融合
 
-该规模足以支持 YOLO11n-OBB 的三组消融实验。数据仍明显偏向 `car`，为保持实验控制变量一致，暂不引入重采样或类别加权。冻结标签后续只作为输入使用，若规则改变必须通过脚本重新生成并重新校验。
+- `RGBIRDataset` 按 frozen manifest 成对读取图像；
+- RGB 转为正确的 RGB 顺序，IR 强制转为单通道；
+- 拼接为 `(H, W, 4)` 后统一执行几何增强；
+- 模型首层输入通道由 3 改为 4；
+- RGB 预训练权重完整保留，IR 权重初始化为 RGB 权重均值；
+- OBB Detect Head 和损失逻辑保持不变。
 
-## 四通道 Smoke Test
+主要实现：`dronevehicle/rgbir_dataset.py`、`dronevehicle/rgbir_trainer.py`。
+
+## 验证
+
+已通过真实数据和官方预训练权重验证：
+
+- `(B, 4, 640, 640)` 输入；本机已验证 `batch=16`、`workers=8`；
+- 同步增强、OBB 标签读取和验证集矩形批处理；
+- YOLO11n-OBB forward、loss、反向传播和 1 epoch 小数据训练；
+- SPD 已固定替换 P2/4→P3/8 下采样层，并通过 640 输入、loss、backward、验证和 FP16 AMP；
+- FP16 AMP 自检与训练。
+
+Smoke test 指标不作为实验结果，正式 200 epochs 尚未运行。
+
+正式三组实验统一配置 `batch=64`；本机 smoke test 可使用 `batch=16`。正式训练前需在 RTX 4090 上检查三种模型，若任一模型无法稳定使用 64，则三组统一降为 32。
+
+## 运行
 
 ```bash
+# 四通道数据、权重与 forward
 uv run python -m scripts.smoke_test_rgbir
-```
 
-该检查覆盖真实 RGB/IR 内容、四通道拼接、同步训练增强、多进程 DataLoader、三通道预训练权重迁移、IR 均值初始化、GPU 输入和 YOLO11n-OBB forward。正式参数可使用 `--batch 16 --workers 8 --train-samples 64` 复查。
-
-本地权重均位于被 Git 忽略的 `weights/`：
-
-- `yolo11n-obb.pt`：正式预训练权重，SHA-256 `b62898ebf38940ca4df323863e45ee9d84a1a46d5d11ebdde529fb33aa9f3a32`；
-- `yolo26n.pt`：仅供 Ultralytics AMP 自检，SHA-256 `9b09cc8bf347f0fc8a5f7657480587f25db09b34bf33b0652110fb03a8ad4fef`。
-
-## Baseline 训练入口
-
-```bash
-# 1 epoch / 32 张图，仅验证训练链路
+# 1 epoch 调试训练（可选 AMP）
 uv run python -m scripts.train_rgbir --smoke
-
-# 同样的 smoke test，并启用正式实验所需的 FP16 AMP
 uv run python -m scripts.train_rgbir --smoke --smoke-amp
 
-# 正式配置：200 epochs / batch 16 / imgsz 640 / workers 8
+# SPD 调试训练
+uv run python -m scripts.train_rgbir --config configs/train/rgbir_spd.yaml --smoke --smoke-amp
+
+# 正式 baseline；默认读取 configs/train/rgbir_baseline.yaml
 uv run python -m scripts.train_rgbir
+
+# 正式 SPD
+uv run python -m scripts.train_rgbir --config configs/train/rgbir_spd.yaml
 ```
 
-正式参数保存在 `configs/train/rgbir_baseline.yaml`。本地不自动运行正式训练；`--smoke` 产生的指标不作为实验结果。
+权重位于被 Git 忽略的 `weights/`：`yolo11n-obb.pt` 用于训练，`yolo26n.pt` 仅用于 Ultralytics AMP 自检。当前 baseline 和 SPD 工程链路已完成，SPD+DEAB 尚未实现。
