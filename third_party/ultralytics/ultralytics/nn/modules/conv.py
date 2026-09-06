@@ -9,6 +9,8 @@ import numpy as np
 import torch
 from torch import nn
 
+from .deab import DEAB
+
 __all__ = (
     "CBAM",
     "ChannelAttention",
@@ -24,6 +26,7 @@ __all__ = (
     "LightConv",
     "RepConv",
     "SPDConv",
+    "SPDConvDEAB",
     "SpatialAttention",
 )
 
@@ -117,6 +120,31 @@ class SPDConv(nn.Module):
         if height % 2 or width % 2:
             raise ValueError(f"SPDConv requires even spatial dimensions, got {(height, width)}")
         return self.conv(self.space_to_depth(x))
+
+
+class SPDConvDEAB(SPDConv):
+    """Apply the frozen SPD downsampling followed by one DEAB at its P3/8 output."""
+
+    def __init__(
+        self,
+        c1: int,
+        c2: int,
+        k: int = 3,
+        p: int | None = None,
+        g: int = 1,
+        d: int = 1,
+        act: bool | nn.Module = True,
+        reduction: int = 8,
+    ) -> None:
+        """Initialize the unchanged SPDConv path and a shape-preserving DEAB."""
+        super().__init__(c1, c2, k, p, g, d, act)
+        # Keep downstream random initialization identical to the SPD model.
+        with torch.random.fork_rng(devices=[]):
+            self.deab = DEAB(c2, kernel_size=3, reduction=reduction)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Downsample with SPDConv and enhance its output without changing shape."""
+        return self.deab(super().forward(x))
 
 
 class Conv2(Conv):

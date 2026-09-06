@@ -75,8 +75,10 @@ from .conv import (
     LightConv,
     RepConv,
     SPDConv,
+    SPDConvDEAB,
     SpatialAttention,
 )
+from .deab import DEAB, DetailEnhancedConv
 from .head import (
     OBB,
     OBB26,
@@ -119,6 +121,8 @@ __all__ = (
     "CBAM",
     "CIB",
     "DFL",
+    "DEAB",
+    "DetailEnhancedConv",
     "ELAN1",
     "MLP",
     "OBB",
@@ -176,6 +180,7 @@ __all__ = (
     "RepC3",
     "RepConv",
     "SPDConv",
+    "SPDConvDEAB",
     "RepNCSPELAN4",
     "RepVGGDW",
     "ResNetLayer",

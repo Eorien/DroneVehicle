@@ -180,8 +180,11 @@ ssh autodl
 - 登录 shell 中 Miniconda 位于 `/root/miniconda3`；非交互命令应使用 `bash -lic` 或完整 Python 路径
 - 服务器项目已部署到 `/root/autodl-tmp/DroneVehicle`，数据通过 `data -> ../DroneVehicle-data` 软链接接入
 - 服务器使用 `uv 0.11.7` 和项目 `.venv`，环境已锁定为 Python 3.12、PyTorch 2.8.0+cu128、Ultralytics 8.4.140
-- RTX 4090 上 baseline 与 SPD 的 `batch=64, imgsz=640, AMP=True` 单 batch 反向传播预检均通过，峰值约 8.79GB
-- SPD+DEAB 尚未实现和预检，但不阻止已通过自身门禁的 baseline 或 SPD 分阶段训练；每组启动前必须由用户单独核对并批准
+- RTX 4090 上 baseline 与 SPD 的 `batch=64, imgsz=640, AMP=True` 单 batch 反向传播预检均通过，预检峰值约 8.79GB
+- baseline 已完成 200 epochs、val 和 test：test mAP@0.5:0.95=`0.61035`，正式训练日志峰值显存 20.5GB，产物已同步至本地 `outputs/formal_experiments/rgbir_baseline/`
+- SPD 已于 2026-09-06 18:01 启动正式训练，tmux 会话为 `rgbir_spd`；启动时 commit 为 `bcdd0a44eadcb83d92488c7e6ad3512ccb5997b2`
+- SPD+DEAB 已完成本地实现与 smoke test：单个 DEAB 紧接 Layer 3 SPD 的 P3/8 输出，模型 2,953,165 parameters / 8.8 GFLOPs；待 RTX 4090 `batch=64` 预检
+- 若 SPD+DEAB 无法稳定使用 `batch=64`，三组统一降为 32，baseline 与 SPD 必须重跑
 推荐流程：
 
 ```text

@@ -1,14 +1,14 @@
 # 正式消融实验记录与启动核对表
 
-> 当前状态：**允许按实验组分阶段启动**。每组只需完成自身实现、配置检查、RTX 4090 预检和用户批准；后续若公共 batch 改变，已完成组必须重跑。当前没有正式实验正在运行。
+> 当前状态：`rgbir_baseline` 已完成正式训练、验证和 test 评估；`rgbir_spd` 正式训练中；`rgbir_spd_deab` 已完成本地实现与 smoke test，等待 RTX 4090 `batch=64` 预检和用户单独批准。
 
 ## 1. 固定实验矩阵
 
 | 实验 ID | 结构 | 唯一结构变化 | 当前状态 |
 |---|---|---|---|
-| `rgbir_baseline` | RGB+IR 四通道融合 | 基准组 | 本地及 RTX 4090 预检通过 |
-| `rgbir_spd` | 四通道融合 + SPD | Layer 3 的 P2/4→P3/8 下采样改为 SPDConv | 本地及 RTX 4090 预检通过 |
-| `rgbir_spd_deab` | 四通道融合 + 同一个 SPD + DEAB | 相对 `rgbir_spd` 只增加 DEAB | 尚未实现 |
+| `rgbir_baseline` | RGB+IR 四通道融合 | 基准组 | 200 epochs、val、test 均已完成 |
+| `rgbir_spd` | 四通道融合 + SPD | Layer 3 的 P2/4→P3/8 下采样改为 SPDConv | 正式训练中（2026-09-06 18:01 启动） |
+| `rgbir_spd_deab` | 四通道融合 + 同一个 SPD + DEAB | Layer 3 保持同一 SPD，紧接一个 P3/8 DEAB | 本地实现与 smoke test 完成，待 4090 预检 |
 
 对比关系：
 
@@ -21,27 +21,27 @@
 ### 公共门禁
 
 - [x] RGB/IR 配对、清洗、严格交集和标签冻结完成；
-- [ ] 当前规则与记录表已提交并推送，服务器 commit 与本地/GitHub 一致；
-- [ ] 启动当日再次确认服务器 Git 干净、GPU 空闲、磁盘充足及数据/权重哈希。
+- [x] 当前规则与记录表已提交并推送，服务器 commit 与本地/GitHub 一致；
+- [x] baseline 与 SPD 启动当日均已确认服务器 Git 干净、GPU 空闲、磁盘充足及数据/权重哈希。
 
 ### `rgbir_baseline` 门禁
 
 - [x] 四通道构建、forward、loss、backward 和 AMP smoke test 通过；
 - [x] RTX 4090 `batch=64, imgsz=640, AMP=True` 单 batch 预检通过；
 - [x] 用户已在 2026-09-06 明确批准优先分阶段启动四通道 baseline；
-- [ ] 正式启动前补填第 8 节的最终 commit、哈希、命令和服务器快照。
+- [x] 正式启动快照、最终 commit、哈希、命令和服务器状态均已记录。
 
 ### `rgbir_spd` 门禁
 
 - [x] SPD 构建、forward、loss、backward 和 AMP smoke test 通过；
 - [x] RTX 4090 `batch=64, imgsz=640, AMP=True` 单 batch 预检通过；
-- [ ] 与 baseline 的最终配置一致性重新校验；
-- [ ] 用户单独批准该组正式启动。
+- [x] 与 baseline 的最终配置一致性重新校验，仅 `model` 和 `name` 不同；
+- [x] 用户于 2026-09-06 明确批准该组正式启动。
 
 ### `rgbir_spd_deab` 门禁
 
-- [ ] SPD+DEAB 模块、模型 YAML 和训练配置完成；
-- [ ] 与 SPD 的最终配置一致性校验；
+- [x] SPD+DEAB 模块、模型 YAML 和训练配置完成；
+- [x] 与 SPD 的配置和共享状态一致性校验通过，仅新增 `model.3.deab.*`；
 - [ ] RTX 4090 `batch=64, imgsz=640, AMP=True` 预检；
 - [ ] 用户单独批准该组正式启动。
 
@@ -78,8 +78,8 @@
 | 项目 | 当前值 |
 |---|---|
 | GitHub | `https://github.com/Eorien/DroneVehicle.git` |
-| 当前开发 commit | `5696550161a220a2b113ac920b9419f0757ad4ab` |
-| 正式实验 commit | **待 SPD+DEAB 完成后冻结** |
+| 正式训练代码 commit | `bcdd0a44eadcb83d92488c7e6ad3512ccb5997b2` |
+| 文档更新 | baseline 结果和 SPD 启动状态在本次本地更新中回填 |
 | Ultralytics | `8.4.140` |
 | Ultralytics upstream commit | `7401d284e77b58d20f3c59aa1d2fcbb496bb7a0e` |
 | `yolo11n-obb.pt` SHA-256 | `b62898ebf38940ca4df323863e45ee9d84a1a46d5d11ebdde529fb33aa9f3a32` |
@@ -95,7 +95,8 @@
 | SPD 模型 YAML | `3a27367d4bd1d8c02ad59719117cd0d3ca2c178810d41fa7e188bd70c0e0cecd` |
 | baseline 训练 YAML | `a6055d742b226d54ec64008bdb00dc2d4c2ff53812b481277015961a04d18473` |
 | SPD 训练 YAML | `27bea3c1231ae98e96d34deb3917f21cbd532ce66576dd592b785d9eb2a12deb` |
-| SPD+DEAB 模型/训练 YAML | **待创建** |
+| SPD+DEAB 模型 YAML | `0223979f7c09158a6074a28873adc112965c0d479710c713788fb34ddc8c946d` |
+| SPD+DEAB 训练 YAML | `701eedac8171fd8770248984aed40e80591e3c1d9d9c5f087d40f5668cf258c9` |
 
 ## 5. 服务器环境
 
@@ -166,100 +167,124 @@
 |---|---:|---:|---:|---|---|---:|
 | baseline | 2,662,626 | 6.8 | 535/541 | 通过 | 通过 | 约 8.79GB |
 | SPD | 2,773,218 | 8.2 | 529/541 | 通过 | 通过 | 约 8.79GB |
-| SPD+DEAB | 待测 | 待测 | 待测 | 待测 | 待测 | 待测 |
+| SPD+DEAB | 2,953,165 | 8.8 | 529/561 | 待 4090 | 待 4090 | 待 4090 |
 
 预检日期：2026-09-06。预检仅使用 64 张训练图、1 epoch 中的单个训练 batch，输出已删除，不属于正式实验结果。
 
+baseline 正式 200 epochs 训练日志中的实际峰值显存为 **20.5GB**；单 batch 预检值不能代表完整训练峰值。SPD 和后续 SPD+DEAB 必须继续监控密集 batch 的动态峰值。
+
+SPD+DEAB 本地门禁已通过：DEConv 数学约束、CPU/CUDA forward/backward、SPD 的 541 个共享状态逐元素一致、真实四通道 `640×640` forward、AMP loss/backward，以及 1 epoch smoke training。新增 179,947 parameters、20 个状态张量，均位于 `model.3.deab.*`。
+
 ## 8. 每次正式运行前必须记录
 
-| 字段 | 记录值 |
-|---|---|
-| 实验 ID | `rgbir_baseline` / `rgbir_spd` / `rgbir_spd_deab` |
-| 启动批准人及时间 | 待填 |
-| 完整启动命令 | 待填 |
-| Git commit | 待填 |
-| `git status --short` | 必须为空 |
-| 数据 report/checksums 哈希 | 待填 |
-| 数据 9,306 项校验 | 必须全部通过 |
-| 两个权重 SHA-256 | 待填 |
-| 模型 YAML SHA-256 | 待填 |
-| 训练 YAML SHA-256 | 待填 |
-| 解析后的 `args.yaml` SHA-256 | 运行创建后补填 |
-| GPU/驱动/PyTorch/cuDNN | 待填 |
-| GPU 启动前显存与占用进程 | 必须空闲 |
-| 磁盘剩余空间 | 待填 |
-| Parameters / GFLOPs | 待填 |
-| 预训练迁移数量及未迁移原因 | 待填 |
-| 随机种子 | 必须为 0 |
-| 是否从断点恢复 | 默认否；若是必须记录来源和原因 |
-
-## 9. 每组正式实验结果记录模板
-
-### 运行信息
+### 8.1 `rgbir_baseline` 启动记录
 
 | 字段 | 记录值 |
 |---|---|
-| 实验 ID | 待填 |
-| run 目录 | 待填 |
-| 开始/结束时间 | 待填 |
-| 总耗时 | 待填 |
-| 完成 epoch / best epoch | 待填 |
-| 停止原因 | 正常完成 / early stop / 人工中断 / 异常 |
-| 峰值显存 | 待填 |
-| 平均单轮时间 | 待填 |
-| 是否发生 OOM、NaN、重启或恢复 | 待填 |
+| 批准与启动时间 | 不思议先生批准；2026-09-06 12:32:25 +08:00 启动 |
+| 完整命令 | `/root/.local/bin/uv run python -m scripts.train_rgbir --config configs/train/rgbir_baseline.yaml --device 0 --name rgbir_baseline` |
+| Git commit / status | `bcdd0a44eadcb83d92488c7e6ad3512ccb5997b2`；工作树干净 |
+| 数据 report / checksums | `c8887d31efcb4d6bf62890847e7fb64bb59fe6a5f2e0a42d07d50855b39756f9` / `fd7eaf81719a76a401b97a34a25cc1e8a55b73b847539f2eda0c94376e698bd0`；9,306 项全部通过 |
+| 权重 | `yolo11n-obb.pt b62898ebf38940ca4df323863e45ee9d84a1a46d5d11ebdde529fb33aa9f3a32`；`yolo26n.pt 9b09cc8bf347f0fc8a5f7657480587f25db09b34bf33b0652110fb03a8ad4fef` |
+| 模型 / 训练 YAML | `147a3bc56ae129d3760419f6c5d674f7d4f635ca9c5098aec90d1aeb376faea6` / `a6055d742b226d54ec64008bdb00dc2d4c2ff53812b481277015961a04d18473` |
+| `args.yaml` | `dcf6f73772cc8aeabfaa49375a6ec18038e75cabb81332108a25db3569e410da` |
+| 服务器快照 | RTX 4090 24GB、Driver 595.71.05、GPU 空闲、数据盘剩余 39GB |
+| 模型 / 迁移 | 2,662,626 params、6.8 GFLOPs；535/541；IR=RGB 卷积权重均值 |
+| seed / resume | `0` / 否 |
 
-### best.pt 验证集总体指标
+### 8.2 `rgbir_spd` 启动记录
+
+| 字段 | 记录值 |
+|---|---|
+| 批准与启动时间 | 不思议先生批准；2026-09-06 18:01:43 +08:00 启动 |
+| 完整命令 | `/root/.local/bin/uv run python -m scripts.train_rgbir --config configs/train/rgbir_spd.yaml --device 0 --name rgbir_spd` |
+| Git commit / status | `bcdd0a44eadcb83d92488c7e6ad3512ccb5997b2`；工作树干净 |
+| 配置一致性 | 与 baseline 仅 `model` 和 `name` 不同 |
+| 数据 report / checksums | `c8887d31efcb4d6bf62890847e7fb64bb59fe6a5f2e0a42d07d50855b39756f9` / `fd7eaf81719a76a401b97a34a25cc1e8a55b73b847539f2eda0c94376e698bd0`；9,306 项全部通过 |
+| 权重 | `yolo11n-obb.pt b62898ebf38940ca4df323863e45ee9d84a1a46d5d11ebdde529fb33aa9f3a32`；`yolo26n.pt 9b09cc8bf347f0fc8a5f7657480587f25db09b34bf33b0652110fb03a8ad4fef` |
+| 模型 / 训练 YAML | `3a27367d4bd1d8c02ad59719117cd0d3ca2c178810d41fa7e188bd70c0e0cecd` / `27bea3c1231ae98e96d34deb3917f21cbd532ce66576dd592b785d9eb2a12deb` |
+| `args.yaml` | `02182648c240c1d7a7ff9d77d531de3c2e27fc6e68e91ff62c3f2638d1981ac0` |
+| 服务器快照 | RTX 4090 24GB、Driver 595.71.05、GPU 空闲、数据盘剩余 39GB |
+| 模型 / 迁移 | 2,773,218 params、8.2 GFLOPs；529/541；Layer 3 SPD 新参数未迁移；IR=RGB 卷积权重均值 |
+| seed / resume | `0` / 否 |
+| 启动快照 | `runs/logs/rgbir_spd_20260906_180143_launch.txt` |
+
+## 9. 正式实验结果
+
+### 9.1 `rgbir_baseline`
+
+#### 运行信息
+
+| 字段 | 记录值 |
+|---|---|
+| run 目录 | `/root/autodl-tmp/DroneVehicle/runs/obb/runs/obb/rgbir_baseline` |
+| 开始 / 结束 | 2026-09-06 12:32:25 / 14:10:31 +08:00 |
+| 总耗时 | 1.620 小时（CSV 累计 5,833.22 秒） |
+| 完成 epoch / best epoch | 200 / 200 |
+| 停止原因 | 正常完成 |
+| 训练日志峰值显存 | 20.5GB |
+| 平均单轮时间 | 约 29.17 秒 |
+| OOM / NaN / 恢复 | 均无；未从断点恢复 |
+
+#### `best.pt` 验证集总体指标
 
 | Precision | Recall | mAP@0.5 | mAP@0.5:0.95 |
 |---:|---:|---:|---:|
-| 待填 | 待填 | 待填 | 待填 |
+| 0.75739 | 0.75059 | 0.76207 | 0.60160 |
 
-### best.pt 测试集总体指标
+#### `best.pt` 测试集总体指标
 
 | Precision | Recall | mAP@0.5 | mAP@0.5:0.95 |
 |---:|---:|---:|---:|
-| 待填 | 待填 | 待填 | 待填 |
+| 0.73906 | 0.76579 | 0.77223 | 0.61035 |
 
-### best.pt 测试集分类指标
+#### `best.pt` 测试集分类指标
 
 | 类别 | Precision | Recall | mAP@0.5 | mAP@0.5:0.95 |
 |---|---:|---:|---:|---:|
-| car | 待填 | 待填 | 待填 | 待填 |
-| truck | 待填 | 待填 | 待填 | 待填 |
-| bus | 待填 | 待填 | 待填 | 待填 |
-| van | 待填 | 待填 | 待填 | 待填 |
-| Freight_car | 待填 | 待填 | 待填 | 待填 |
+| car | 0.93582 | 0.97112 | 0.98607 | 0.81800 |
+| truck | 0.69328 | 0.80633 | 0.79463 | 0.58574 |
+| bus | 0.91026 | 0.89920 | 0.92912 | 0.76338 |
+| van | 0.55282 | 0.49096 | 0.50494 | 0.40456 |
+| Freight_car | 0.60314 | 0.66132 | 0.64641 | 0.48008 |
 
-### 训练状态与效率
+#### 训练状态与效率
 
 | 字段 | 记录值 |
 |---|---|
-| best epoch 的 box/cls/dfl/angle loss | 待填 |
-| 最终 epoch 的 box/cls/dfl/angle loss | 待填 |
-| preprocess / inference / postprocess 速度 | 待填 |
-| 实际 batch / accumulate | 待填 |
-| 实际 workers | 待填 |
-| 平均 GPU 利用率/温度（若采集） | 待填 |
+| best/final epoch 的 box/cls/dfl/angle loss | `0.64329 / 0.40530 / 0.96035 / 0.00892` |
+| test preprocess / inference / postprocess | `1.020 / 0.596 / 2.233 ms/image` |
+| 实际 batch / accumulate / workers | `64 / 1 / 8` |
+| 测试说明 | 首次独立评估包装器因未设置 `PYTHONPATH` 在导入阶段退出，未读取模型和数据；设置项目根目录后重试成功 |
 
-### 产物
+#### 产物
 
 | 文件 | SHA-256 / 路径 |
 |---|---|
-| `best.pt` | 待填 |
-| `last.pt` | 待填 |
-| `args.yaml` | 待填 |
-| `results.csv` | 待填 |
-| 验证输出与混淆矩阵 | 待填 |
-| 训练日志 | 待填 |
+| `best.pt` | `0e48f388ae8a1eca87e80d7e0c91ecfeacbfb0d2f43f51f842782f676d587062` |
+| `last.pt` | `a8cfaf5a832f2c59bcc9c8731936febb28ecfd22e425528f56ac2ecefd3451ab` |
+| `args.yaml` | `dcf6f73772cc8aeabfaa49375a6ec18038e75cabb81332108a25db3569e410da` |
+| `results.csv` | `e4c1309427aa4d829bab33f2295a8a1831e323f57b0ba10ed05437b905e75a02` |
+| 训练日志 | `c8f73750f26832050f27be5d1ff951f866e311a54f612d56ed1c656446fd064f` |
+| test 指标 | `test_metrics.json`：`078d1ed34a87c510c14c8911cad4cba1c6d015dc1dcd93ee80eef5a115061266` |
+| test 日志 | `92fce89305697c3178e47a6f022e36e18f71d20a8adf2b0f7334adbdc0f6e12e` |
+| 本地归档 | `outputs/formal_experiments/rgbir_baseline/`，47 个文件，完整校验通过 |
+
+### 9.2 `rgbir_spd`
+
+正式训练已于 2026-09-06 18:01:43 +08:00 启动，结果待训练、best.pt 验证和冻结 test 评估完成后回填。
+
+### 9.3 `rgbir_spd_deab`
+
+本地实现和 smoke test 已完成；等待 RTX 4090 `batch=64` 预检及用户单独批准，尚未正式启动。
 
 ## 10. 三组测试集结果汇总
 
 | 实验 | Precision | Recall | mAP@0.5 | mAP@0.5:0.95 | ΔmAP@0.5:0.95 | Params | GFLOPs | 峰值显存 | 耗时 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| baseline | 待填 | 待填 | 待填 | 待填 | — | 2,662,626 | 6.8 | 待填 | 待填 |
+| baseline | 0.73906 | 0.76579 | 0.77223 | 0.61035 | — | 2,662,626 | 6.8 | 20.5GB | 1.620h |
 | SPD | 待填 | 待填 | 待填 | 待填 | 相对 baseline | 2,773,218 | 8.2 | 待填 | 待填 |
-| SPD+DEAB | 待填 | 待填 | 待填 | 待填 | 相对 SPD | 待填 | 待填 | 待填 | 待填 |
+| SPD+DEAB | 待填 | 待填 | 待填 | 待填 | 相对 SPD | 2,953,165 | 8.8 | 待填 | 待填 |
 
 ## 11. 异常与变更规则
 
@@ -275,7 +300,7 @@
 ## 12. 用户分阶段批准
 
 - [x] `rgbir_baseline`：用户于 2026-09-06 核对记录后明确批准优先启动；
-- [ ] `rgbir_spd`：待该组启动前单独批准；
+- [x] `rgbir_spd`：用户于 2026-09-06 核对 baseline 结果后明确批准并启动；
 - [ ] `rgbir_spd_deab`：待实现、预检和启动前单独批准。
 
 批准只对对应实验组有效。每组实际启动前仍必须完成公共门禁，并在第 8 节补齐最终运行快照。

@@ -51,19 +51,41 @@ uv sync --locked
 
 主要实现：`dronevehicle/rgbir_dataset.py`、`dronevehicle/rgbir_trainer.py`。
 
-## 验证
+## 验证与正式实验进度
 
 已通过真实数据和官方预训练权重验证：
 
-- `(B, 4, 640, 640)` 输入；本机已验证 `batch=16`、`workers=8`；
-- 同步增强、OBB 标签读取和验证集矩形批处理；
-- YOLO11n-OBB forward、loss、反向传播和 1 epoch 小数据训练；
-- SPD 已固定替换 P2/4→P3/8 下采样层，并通过 640 输入、loss、backward、验证和 FP16 AMP；
-- FP16 AMP 自检与训练。
+- `(B, 4, 640, 640)` 输入、同步增强、OBB 标签读取和验证集矩形批处理；
+- YOLO11n-OBB forward、loss、反向传播和 FP16 AMP；
+- SPD 固定替换 Layer 3 的 P2/4→P3/8 下采样，并通过本地及 RTX 4090 `batch=64` 预检；
+- DEAB 采用 DEConv + 通道/空间/像素注意力，紧接同一个 SPD 的 P3/8 输出；本地 CPU/CUDA、真实四通道 640 forward、loss/backward 和 AMP smoke test 均通过。
 
-Smoke test 指标不作为实验结果，正式 200 epochs 尚未运行。
+截至 2026-09-06：
 
-正式三组实验统一配置 `batch=64`；本机 smoke test 可使用 `batch=16`。正式训练前需在 RTX 4090 上检查三种模型，若任一模型无法稳定使用 64，则三组统一降为 32。
+- `rgbir_baseline` 已完成 200 epochs、验证集复评和冻结 test 集正式评估；
+- `rgbir_spd` 已于 2026-09-06 18:01 启动 200 epochs 正式训练；
+- `rgbir_spd_deab` 已完成本地实现与 smoke test，待 SPD 训练结束后进行 RTX 4090 `batch=64` 预检。
+
+### `rgbir_baseline` 正式结果
+
+| 数据集 | Precision | Recall | mAP@0.5 | mAP@0.5:0.95 |
+|---|---:|---:|---:|---:|
+| val | 75.74% | 75.06% | 76.21% | 60.16% |
+| test | 73.91% | 76.58% | 77.22% | 61.04% |
+
+测试集逐类别 mAP@0.5:0.95：`car 81.80%`、`truck 58.57%`、`bus 76.34%`、`van 40.46%`、`Freight_car 48.01%`。当前主要短板是 `van`。
+
+baseline 完成 200 epochs，best epoch 为 200，总耗时约 1.620 小时，训练日志峰值显存为 20.5GB。`best.pt` SHA-256：
+
+```text
+0e48f388ae8a1eca87e80d7e0c91ecfeacbfb0d2f43f51f842782f676d587062
+```
+
+本地归档位于：
+
+```text
+outputs/formal_experiments/rgbir_baseline/
+```
 
 ## 运行
 
@@ -71,20 +93,24 @@ Smoke test 指标不作为实验结果，正式 200 epochs 尚未运行。
 # 四通道数据、权重与 forward
 uv run python -m scripts.smoke_test_rgbir
 
-# 1 epoch 调试训练（可选 AMP）
+# baseline 调试训练（可选 AMP）
 uv run python -m scripts.train_rgbir --smoke
 uv run python -m scripts.train_rgbir --smoke --smoke-amp
 
 # SPD 调试训练
 uv run python -m scripts.train_rgbir --config configs/train/rgbir_spd.yaml --smoke --smoke-amp
 
-# 正式 baseline；默认读取 configs/train/rgbir_baseline.yaml
-uv run python -m scripts.train_rgbir
+# DEAB 专项与 SPD+DEAB 调试训练
+uv run python -m scripts.smoke_test_deab --device cuda
+uv run python -m scripts.train_rgbir --config configs/train/rgbir_spd_deab.yaml --smoke --smoke-amp
+
+# 正式 baseline
+uv run python -m scripts.train_rgbir --config configs/train/rgbir_baseline.yaml
 
 # 正式 SPD
 uv run python -m scripts.train_rgbir --config configs/train/rgbir_spd.yaml
 ```
 
-权重位于被 Git 忽略的 `weights/`：`yolo11n-obb.pt` 用于训练，`yolo26n.pt` 仅用于 Ultralytics AMP 自检。当前 baseline 和 SPD 工程链路已完成，SPD+DEAB 尚未实现。
+权重位于被 Git 忽略的 `weights/`：`yolo11n-obb.pt` 用于训练，`yolo26n.pt` 仅用于 Ultralytics AMP 自检。正式实验产物位于被 Git 忽略的 `runs/` 或 `outputs/formal_experiments/`，不得提交权重。
 
-正式实验启动门禁、环境指纹和结果模板见 `docs/formal_experiment_record.md`。
+完整启动门禁、配置/数据指纹和正式结果见 `docs/formal_experiment_record.md`。
