@@ -1,14 +1,14 @@
 # 正式消融实验记录与启动核对表
 
-> 当前状态：`rgbir_baseline` 已完成正式训练、验证和 test 评估；`rgbir_spd` 正式训练中；`rgbir_spd_deab` 已完成本地实现与 smoke test，等待 RTX 4090 `batch=64` 预检和用户单独批准。
+> 当前状态：`rgbir_baseline` 与 `rgbir_spd` 已完成正式训练、验证和 test 评估；`rgbir_spd_deab` 已通过本地与 RTX 4090 `batch=64` 预检并获用户批准，等待最终记录 commit 推送后启动。
 
 ## 1. 固定实验矩阵
 
 | 实验 ID | 结构 | 唯一结构变化 | 当前状态 |
 |---|---|---|---|
 | `rgbir_baseline` | RGB+IR 四通道融合 | 基准组 | 200 epochs、val、test 均已完成 |
-| `rgbir_spd` | 四通道融合 + SPD | Layer 3 的 P2/4→P3/8 下采样改为 SPDConv | 正式训练中（2026-09-06 18:01 启动） |
-| `rgbir_spd_deab` | 四通道融合 + 同一个 SPD + DEAB | Layer 3 保持同一 SPD，紧接一个 P3/8 DEAB | 本地实现与 smoke test 完成，待 4090 预检 |
+| `rgbir_spd` | 四通道融合 + SPD | Layer 3 的 P2/4→P3/8 下采样改为 SPDConv | 200 epochs、val、test 均已完成 |
+| `rgbir_spd_deab` | 四通道融合 + 同一个 SPD + DEAB | Layer 3 保持同一 SPD，紧接一个 P3/8 DEAB | 本地及 RTX 4090 `batch=64` 预检通过，待启动 |
 
 对比关系：
 
@@ -42,8 +42,8 @@
 
 - [x] SPD+DEAB 模块、模型 YAML 和训练配置完成；
 - [x] 与 SPD 的配置和共享状态一致性校验通过，仅新增 `model.3.deab.*`；
-- [ ] RTX 4090 `batch=64, imgsz=640, AMP=True` 预检；
-- [ ] 用户单独批准该组正式启动。
+- [x] RTX 4090 `batch=64, imgsz=640, AMP=True` 单 batch backward 预检通过，峰值 9.67GB；
+- [x] 用户于 2026-09-06 在核对 SPD 结果和 OOM 风险后批准该组正式启动。
 
 各组只受自身门禁和公共门禁约束，不要求等待后续模型实现。若后续任一模型无法稳定使用 `batch=64`，三组必须统一改为 `batch=32`，已经完成的实验也必须重新训练。
 
@@ -167,13 +167,15 @@
 |---|---:|---:|---:|---|---|---:|
 | baseline | 2,662,626 | 6.8 | 535/541 | 通过 | 通过 | 约 8.79GB |
 | SPD | 2,773,218 | 8.2 | 529/541 | 通过 | 通过 | 约 8.79GB |
-| SPD+DEAB | 2,953,165 | 8.8 | 529/561 | 待 4090 | 待 4090 | 待 4090 |
+| SPD+DEAB | 2,953,165 | 8.8 | 529/561 | 通过 | 通过 | 9.67GB |
 
 预检日期：2026-09-06。预检仅使用 64 张训练图、1 epoch 中的单个训练 batch，输出已删除，不属于正式实验结果。
 
 baseline 正式 200 epochs 训练日志中的实际峰值显存为 **20.5GB**；单 batch 预检值不能代表完整训练峰值。SPD 和后续 SPD+DEAB 必须继续监控密集 batch 的动态峰值。
 
 SPD+DEAB 本地门禁已通过：DEConv 数学约束、CPU/CUDA forward/backward、SPD 的 541 个共享状态逐元素一致、真实四通道 `640×640` forward、AMP loss/backward，以及 1 epoch smoke training。新增 179,947 parameters、20 个状态张量，均位于 `model.3.deab.*`。
+
+SPD+DEAB RTX 4090 预检日志：`runs/logs/rgbir_spd_deab_batch64_precheck_20260906_194619.log`，SHA-256=`e21cd0b7374c7037c956f00a270eee391f04f7308d638b3e279e79160e442d84`。相对 SPD 预检约增加 0.88GB；按 SPD 正式峰值 20.3GB 粗略估计，正式训练可能达到约 21～22GB，仍需全程监控。
 
 ## 8. 每次正式运行前必须记录
 
@@ -208,6 +210,23 @@ SPD+DEAB 本地门禁已通过：DEConv 数学约束、CPU/CUDA forward/backward
 | 模型 / 迁移 | 2,773,218 params、8.2 GFLOPs；529/541；Layer 3 SPD 新参数未迁移；IR=RGB 卷积权重均值 |
 | seed / resume | `0` / 否 |
 | 启动快照 | `runs/logs/rgbir_spd_20260906_180143_launch.txt` |
+
+### 8.3 `rgbir_spd_deab` 启动记录
+
+| 字段 | 记录值 |
+|---|---|
+| 批准 | 不思议先生于 2026-09-06 核对 SPD 结果和 OOM 风险后批准 |
+| 计划命令 | `/root/.local/bin/uv run python -m scripts.train_rgbir --config configs/train/rgbir_spd_deab.yaml --device 0 --name rgbir_spd_deab` |
+| 训练代码 commit | `31eb000be586a4c3af7eba54cbcfb866dfc2c6ee` |
+| 配置一致性 | 与 SPD 仅 `model` 和 `name` 不同；模型仅在 Layer 3 SPD 输出后增加 DEAB |
+| 数据 report / checksums | `c8887d31efcb4d6bf62890847e7fb64bb59fe6a5f2e0a42d07d50855b39756f9` / `fd7eaf81719a76a401b97a34a25cc1e8a55b73b847539f2eda0c94376e698bd0` |
+| 权重 | `yolo11n-obb.pt b62898ebf38940ca4df323863e45ee9d84a1a46d5d11ebdde529fb33aa9f3a32`；`yolo26n.pt 9b09cc8bf347f0fc8a5f7657480587f25db09b34bf33b0652110fb03a8ad4fef` |
+| 模型 / 训练 YAML | `0223979f7c09158a6074a28873adc112965c0d479710c713788fb34ddc8c946d` / `701eedac8171fd8770248984aed40e80591e3c1d9d9c5f087d40f5668cf258c9` |
+| 模型 / 迁移 | 2,953,165 params、8.8 GFLOPs；529/561；IR=RGB 卷积权重均值 |
+| RTX 4090 预检 | `batch=64` AMP backward 通过，峰值 9.67GB |
+| 服务器状态 | commit `31eb000...`、Git 干净、GPU 空闲、数据盘剩余 39GB |
+| seed / resume | `0` / 否 |
+| 待启动后补填 | 启动时间、最终记录 commit、`args.yaml` SHA-256、启动快照 |
 
 ## 9. 正式实验结果
 
@@ -272,18 +291,20 @@ SPD+DEAB 本地门禁已通过：DEConv 数学约束、CPU/CUDA forward/backward
 
 ### 9.2 `rgbir_spd`
 
-正式训练已于 2026-09-06 18:01:43 +08:00 启动，结果待训练、best.pt 验证和冻结 test 评估完成后回填。
+正常完成 200 epochs，best epoch=199，总耗时 1.551 小时，峰值显存 20.3GB，无 OOM/NaN/恢复。best.pt 的 val 指标为 P=`0.74731`、R=`0.76658`、mAP50=`0.76206`、mAP50-95=`0.60714`；test 指标为 P=`0.73300`、R=`0.77063`、mAP50=`0.76919`、mAP50-95=`0.61078`。
+
+产物：`best.pt ff68f7e5...d555`、`last.pt 4190028f...da60`、`results.csv 6ac1bf2e...b46`、`test_metrics.json cc9dffee...5806`；已归档至 `outputs/formal_experiments/rgbir_spd/`，43 个文件校验通过。
 
 ### 9.3 `rgbir_spd_deab`
 
-本地实现和 smoke test 已完成；等待 RTX 4090 `batch=64` 预检及用户单独批准，尚未正式启动。
+本地实现和 RTX 4090 `batch=64` 预检已完成，用户已批准；等待最终记录推送后正式启动。
 
 ## 10. 三组测试集结果汇总
 
 | 实验 | Precision | Recall | mAP@0.5 | mAP@0.5:0.95 | ΔmAP@0.5:0.95 | Params | GFLOPs | 峰值显存 | 耗时 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | baseline | 0.73906 | 0.76579 | 0.77223 | 0.61035 | — | 2,662,626 | 6.8 | 20.5GB | 1.620h |
-| SPD | 待填 | 待填 | 待填 | 待填 | 相对 baseline | 2,773,218 | 8.2 | 待填 | 待填 |
+| SPD | 0.73300 | 0.77063 | 0.76919 | 0.61078 | +0.00042 | 2,773,218 | 8.2 | 20.3GB | 1.551h |
 | SPD+DEAB | 待填 | 待填 | 待填 | 待填 | 相对 SPD | 2,953,165 | 8.8 | 待填 | 待填 |
 
 ## 11. 异常与变更规则
@@ -301,6 +322,6 @@ SPD+DEAB 本地门禁已通过：DEConv 数学约束、CPU/CUDA forward/backward
 
 - [x] `rgbir_baseline`：用户于 2026-09-06 核对记录后明确批准优先启动；
 - [x] `rgbir_spd`：用户于 2026-09-06 核对 baseline 结果后明确批准并启动；
-- [ ] `rgbir_spd_deab`：待实现、预检和启动前单独批准。
+- [x] `rgbir_spd_deab`：用户于 2026-09-06 核对 SPD 结果、DEAB 本地测试和 OOM 风险后明确批准启动。
 
 批准只对对应实验组有效。每组实际启动前仍必须完成公共门禁，并在第 8 节补齐最终运行快照。
