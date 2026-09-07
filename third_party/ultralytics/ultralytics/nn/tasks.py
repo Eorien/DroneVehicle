@@ -30,6 +30,7 @@ from ultralytics.nn.modules import (
     A2C2f,
     AConv,
     ADown,
+    AdaptiveFeatureFusion,
     Bottleneck,
     BottleneckCSP,
     C2f,
@@ -60,6 +61,7 @@ from ultralytics.nn.modules import (
     LRPCHead,
     Pose,
     Pose26,
+    RGBIRSplit,
     RepC3,
     RepConv,
     SPDConv,
@@ -2112,6 +2114,18 @@ def parse_model(d, ch, verbose=True):
                     args.extend((True, 1.2))
             if m is C2fCIB:
                 legacy = False
+        elif m is RGBIRSplit:
+            c2 = ch[f]
+            if c2 != 4:
+                raise ValueError(f"RGBIRSplit requires four input channels, got {c2}")
+        elif m is AdaptiveFeatureFusion:
+            if not isinstance(f, list) or len(f) != 2:
+                raise ValueError("AdaptiveFeatureFusion requires exactly two input layers")
+            input_channels = [ch[index] for index in f]
+            if input_channels[0] != input_channels[1]:
+                raise ValueError(f"AdaptiveFeatureFusion input channels must match, got {input_channels}")
+            c2 = input_channels[0]
+            args = [c2, *args]
         elif m is AIFI:
             args = [ch[f], *args]
         elif m in frozenset({HGStem, HGBlock}):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train the RGB-IR YOLO11-OBB baseline with explicit formal or smoke settings."""
+"""Train an RGB-IR YOLO11-OBB model with explicit formal or smoke settings."""
 
 from __future__ import annotations
 

@@ -1,7 +1,8 @@
-"""Project-level OBB trainer for four-channel RGB-IR early fusion."""
+"""Project-level OBB trainer for four-channel RGB-IR early or dual-stream fusion."""
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import torch
@@ -9,6 +10,7 @@ from torch import nn
 
 from ultralytics.data.utils import get_split_fraction
 from ultralytics.models.yolo.obb.train import OBBTrainer
+from ultralytics.nn.modules import RGBIRSplit
 from ultralytics.nn.tasks import OBBModel
 from ultralytics.utils import LOGGER, RANK
 from ultralytics.utils.torch_utils import unwrap_model
@@ -67,6 +69,121 @@ def initialize_ir_channel(model: OBBModel, weights: Any) -> bool:
     return True
 
 
+def _dual_destination_indices(source_index: int) -> tuple[int, ...]:
+    """Map one official YOLO11 layer index to dual RGB/IR branches or the shared head."""
+    if 0 <= source_index <= 10:
+        return source_index + 2, source_index + 14
+    if 11 <= source_index <= 23:
+        return (source_index + 17,)
+    return ()
+
+
+def initialize_dual_stream(model: OBBModel, weights: Any) -> int:
+    """Explicitly initialize RGB/IR backbones and the shared head from one RGB checkpoint."""
+    source = _source_model(weights)
+    if source is None:
+        return 0
+    if not isinstance(model.model[0], RGBIRSplit):
+        raise TypeError(
+            "Dual-stream initialization requires RGBIRSplit at model layer 0"
+        )
+
+    source_state = source.float().state_dict()
+    target_state = model.state_dict()
+    transferred: dict[str, torch.Tensor] = {}
+    skipped: list[str] = []
+    backbone_targets: set[str] = set()
+
+    for source_key, source_tensor in source_state.items():
+        match = re.match(r"^model\.(\d+)\.(.+)$", source_key)
+        if match is None:
+            continue
+        source_index = int(match.group(1))
+        suffix = match.group(2)
+        for destination_index in _dual_destination_indices(source_index):
+            destination_key = f"model.{destination_index}.{suffix}"
+            if destination_key not in target_state:
+                skipped.append(f"{source_key} -> {destination_key} (missing target)")
+                continue
+            target_tensor = target_state[destination_key]
+            if (
+                source_index == 0
+                and destination_index == 14
+                and suffix == "conv.weight"
+            ):
+                if source_tensor.shape[1] != 3 or target_tensor.shape[1] != 1:
+                    raise ValueError(
+                        "IR branch first convolution must map from three source channels to one target channel"
+                    )
+                mapped_tensor = source_tensor.mean(dim=1, keepdim=True)
+            elif source_tensor.shape == target_tensor.shape:
+                mapped_tensor = source_tensor
+            else:
+                skipped.append(
+                    f"{source_key} -> {destination_key} "
+                    f"({tuple(source_tensor.shape)} != {tuple(target_tensor.shape)})"
+                )
+                continue
+            transferred[destination_key] = mapped_tensor.to(
+                device=target_tensor.device, dtype=target_tensor.dtype
+            )
+            if source_index <= 10:
+                backbone_targets.add(destination_key)
+
+    expected_backbone_targets = {
+        f"model.{destination_index}.{match.group(2)}"
+        for source_key in source_state
+        if (match := re.match(r"^model\.(\d+)\.(.+)$", source_key))
+        and int(match.group(1)) <= 10
+        for destination_index in _dual_destination_indices(int(match.group(1)))
+    }
+    missing_backbone = sorted(expected_backbone_targets - backbone_targets)
+    if missing_backbone:
+        raise RuntimeError(
+            f"Dual-stream backbone weights were not fully initialized: {missing_backbone}"
+        )
+
+    model.load_state_dict(transferred, strict=False)
+    loaded_state = model.state_dict()
+    source_first = source_state["model.0.conv.weight"].to(
+        loaded_state["model.2.conv.weight"]
+    )
+    if not torch.equal(loaded_state["model.2.conv.weight"], source_first):
+        raise RuntimeError("RGB branch first convolution was not transferred exactly")
+    if not torch.equal(
+        loaded_state["model.14.conv.weight"], source_first.mean(dim=1, keepdim=True)
+    ):
+        raise RuntimeError(
+            "IR branch first convolution was not initialized as the RGB mean"
+        )
+    fusion_tensors = [
+        tensor
+        for key, tensor in loaded_state.items()
+        if key.startswith(("model.25.gate.", "model.26.gate.", "model.27.gate."))
+    ]
+    if not fusion_tensors or any(
+        torch.count_nonzero(tensor) for tensor in fusion_tensors
+    ):
+        raise RuntimeError(
+            "Adaptive fusion gates must start at exactly 0.5 via zero logits"
+        )
+
+    LOGGER.info(
+        f"Transferred {len(transferred)}/{len(target_state)} target state items "
+        "into both modality backbones and the shared head"
+    )
+    LOGGER.info(
+        "Initialized IR branch input convolution as the mean of pretrained RGB weights"
+    )
+    LOGGER.info("Initialized P3/P4/P5 adaptive fusion gates to equal RGB/IR weighting")
+    if skipped:
+        LOGGER.info(
+            f"Skipped {len(skipped)} incompatible mapped items (expected task-head differences): "
+            + "; ".join(skipped)
+        )
+    return len(transferred)
+
+
 class RGBIROBBTrainer(OBBTrainer):
     """Use frozen paired RGB-IR manifests with the standard Ultralytics OBB training loop."""
 
@@ -96,11 +213,25 @@ class RGBIROBBTrainer(OBBTrainer):
     def get_model(
         self,
         cfg: str | dict | None = None,
-        weights: str | None = None,
+        weights: Any = None,
         verbose: bool = True,
     ) -> OBBModel:
-        """Build a four-channel OBB model and explicitly initialize its IR input weights."""
-        model = super().get_model(cfg=cfg, weights=weights, verbose=verbose)
+        """Build an early- or dual-stream four-channel OBB model with explicit weight transfer."""
+        model = self.set_model_names_for_load(
+            OBBModel(
+                cfg,
+                nc=self.data["nc"],
+                ch=self.data["channels"],
+                verbose=verbose and RANK == -1,
+            )
+        )
+        if isinstance(model.model[0], RGBIRSplit):
+            if weights is not None:
+                initialize_dual_stream(model, weights)
+            return model
+
+        if weights is not None:
+            model.load(weights)
         initialized = initialize_ir_channel(model, weights)
         if weights is not None and not initialized and RANK in {-1, 0}:
             source = _source_model(weights)

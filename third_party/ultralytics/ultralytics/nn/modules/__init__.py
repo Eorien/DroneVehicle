@@ -79,6 +79,7 @@ from .conv import (
     SpatialAttention,
 )
 from .deab import DEAB, DetailEnhancedConv
+from .fusion import AdaptiveFeatureFusion, RGBIRSplit
 from .head import (
     OBB,
     OBB26,
@@ -113,6 +114,7 @@ from .transformer import (
 
 __all__ = (
     "AIFI",
+    "AdaptiveFeatureFusion",
     "C1",
     "C2",
     "C2PSA",
@@ -177,6 +179,7 @@ __all__ = (
     "Pose26",
     "Proto",
     "RTDETRDecoder",
+    "RGBIRSplit",
     "RepC3",
     "RepConv",
     "SPDConv",

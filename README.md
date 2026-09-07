@@ -87,6 +87,17 @@ baseline 完成 200 epochs，best epoch 为 200，总耗时约 1.620 小时，�
 outputs/formal_experiments/rgbir_baseline/
 ```
 
+## 后续探索：双流自适应中期融合
+
+第一版双流模型已完成本地实现：模型内将四通道输入拆成 RGB/IR，两条 YOLO11n Backbone 分别提取特征，在 P3/P4/P5 使用初始权重为 0.5 的逐通道逐位置门控融合，再接共享 Neck 与 OBB Head。当前不包含 P2、SPD、DEAB 或特征对齐模块。
+
+| 模型 | Parameters | GFLOPs | 预训练迁移 |
+|---|---:|---:|---:|
+| 四通道前期融合 baseline | 2,662,626 | 6.8 | 535/541 |
+| 双流自适应中期融合 | 4,224,786 | 10.5 | 775/787 |
+
+双流模型已通过 CPU/CUDA、真实四通道 640 forward、AMP loss/backward、checkpoint 和 1 epoch smoke test；尚未进行 RTX 4090 `batch=64` 预检或正式训练。设计和迁移细节见 `docs/dual_stream_middle_fusion.md`，结构图见 `docs/rgbir_dual_stream_adaptive_fusion.drawio`。
+
 ## 运行
 
 ```bash
@@ -103,6 +114,10 @@ uv run python -m scripts.train_rgbir --config configs/train/rgbir_spd.yaml --smo
 # DEAB 专项与 SPD+DEAB 调试训练
 uv run python -m scripts.smoke_test_deab --device cuda
 uv run python -m scripts.train_rgbir --config configs/train/rgbir_spd_deab.yaml --smoke --smoke-amp
+
+# 双流中期融合专项与调试训练
+uv run python -m scripts.smoke_test_dual_fusion --device cuda
+uv run python -m scripts.train_rgbir --config configs/train/rgbir_dual.yaml --smoke --smoke-amp
 
 # 正式 baseline
 uv run python -m scripts.train_rgbir --config configs/train/rgbir_baseline.yaml

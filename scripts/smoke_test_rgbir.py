@@ -11,10 +11,11 @@ import cv2
 import numpy as np
 import torch
 
-from dronevehicle import RGBIRDataset, initialize_ir_channel
+from dronevehicle import RGBIRDataset, initialize_dual_stream, initialize_ir_channel
 from ultralytics.cfg import DEFAULT_CFG
 from ultralytics.data.build import build_dataloader
 from ultralytics.data.utils import check_det_dataset
+from ultralytics.nn.modules import RGBIRSplit
 from ultralytics.nn.tasks import OBBModel, load_checkpoint
 
 DEFAULT_MODEL = Path(
@@ -100,13 +101,26 @@ def check_weight_initialization(
     source_weight = source.state_dict()["model.0.conv.weight"].float().clone()
     assert source.task == "obb" and source_weight.shape[1] == 3
     target = OBBModel(model_yaml, ch=4, nc=len(data["names"]), verbose=False)
-    target.load(source, verbose=False)
-    assert initialize_ir_channel(target, source)
-    target_weight = target.state_dict()["model.0.conv.weight"]
-    assert torch.equal(target_weight[:, :3], source_weight)
-    assert torch.equal(target_weight[:, 3:4], source_weight.mean(dim=1, keepdim=True))
+    if isinstance(target.model[0], RGBIRSplit):
+        transferred = initialize_dual_stream(target, source)
+        target_state = target.state_dict()
+        assert transferred > 0
+        assert torch.equal(target_state["model.2.conv.weight"], source_weight)
+        assert torch.equal(
+            target_state["model.14.conv.weight"],
+            source_weight.mean(dim=1, keepdim=True),
+        )
+        print("dual RGB/IR backbone transfer and equal-gate initialization: OK")
+    else:
+        target.load(source, verbose=False)
+        assert initialize_ir_channel(target, source)
+        target_weight = target.state_dict()["model.0.conv.weight"]
+        assert torch.equal(target_weight[:, :3], source_weight)
+        assert torch.equal(
+            target_weight[:, 3:4], source_weight.mean(dim=1, keepdim=True)
+        )
+        print("pretrained RGB transfer and IR mean initialization: OK")
     print(f"official checkpoint: {weights_path}")
-    print("pretrained RGB transfer and IR mean initialization: OK")
     return target
 
 
@@ -142,10 +156,18 @@ def check_augmented_forward(
         images = batch["img"].to(args.device, non_blocking=True).float() / 255.0
         with torch.inference_mode():
             output = model(images)
-        assert model.model[0].conv.weight.shape[1] == 4
+        if isinstance(model.model[0], RGBIRSplit):
+            assert model.model[2].conv.weight.shape[1] == 3
+            assert model.model[14].conv.weight.shape[1] == 1
+            input_description = "RGB first conv: 3 channels; IR first conv: 1 channel"
+        else:
+            assert model.model[0].conv.weight.shape[1] == 4
+            input_description = (
+                f"first convolution: {tuple(model.model[0].conv.weight.shape)}"
+            )
         assert isinstance(output, tuple) and output[0].shape[0] == images.shape[0]
         print(f"augmented batch: {tuple(batch['img'].shape)}")
-        print(f"first convolution: {tuple(model.model[0].conv.weight.shape)}")
+        print(input_description)
         print(f"OBB prediction: {tuple(output[0].shape)}")
         print("augmented GPU forward: OK")
     finally:
