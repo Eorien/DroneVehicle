@@ -1,0 +1,79 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+
+# YOLO11n-OBB RGB-IR Hybrid Fusion: one shallow P2 interaction plus unchanged P3/P4/P5 adaptive fusion.
+
+# Parameters
+nc: 80 # number of classes; overridden by the dataset configuration
+scales:
+  # [depth, width, max_channels]
+  n: [0.50, 0.25, 1024]
+  s: [0.50, 0.50, 1024]
+  m: [0.50, 1.00, 512]
+  l: [1.00, 1.00, 512]
+  x: [1.00, 1.50, 512]
+
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, RGBIRSplit, []] # 0: (B,4,H,W) -> [RGB, IR]
+
+  # Independent RGB shallow feature extraction through P2/4
+  - [0, 1, Index, [3, 0]] # 1: RGB input
+  - [-1, 1, Conv, [64, 3, 2]] # 2-P1/2
+  - [-1, 1, Conv, [128, 3, 2]] # 3-P2/4
+  - [-1, 2, C3k2, [256, False, 0.25]] # 4-RGB shallow P2: (B,64,160,160)
+
+  # Independent IR shallow feature extraction through P2/4
+  - [0, 1, Index, [1, 1]] # 5: IR input
+  - [-1, 1, Conv, [64, 3, 2]] # 6-P1/2
+  - [-1, 1, Conv, [128, 3, 2]] # 7-P2/4
+  - [-1, 2, C3k2, [256, False, 0.25]] # 8-IR shallow P2: (B,64,160,160)
+
+  # One zero-perturbation shallow cross-modal residual interaction
+  - [[4, 8], 1, ShallowCrossModalInteraction, []] # 9 -> [enhanced RGB P2, enhanced IR P2]
+
+  # RGB deep Backbone: P2/4 -> P5/32
+  - [9, 1, Index, [64, 0]] # 10: enhanced RGB P2
+  - [-1, 1, Conv, [256, 3, 2]] # 11-P3/8
+  - [-1, 2, C3k2, [512, False, 0.25]] # 12-RGB P3
+  - [-1, 1, Conv, [512, 3, 2]] # 13-P4/16
+  - [-1, 2, C3k2, [512, True]] # 14-RGB P4
+  - [-1, 1, Conv, [1024, 3, 2]] # 15-P5/32
+  - [-1, 2, C3k2, [1024, True]] # 16
+  - [-1, 1, SPPF, [1024, 5]] # 17
+  - [-1, 2, C2PSA, [1024]] # 18-RGB P5
+
+  # IR deep Backbone: P2/4 -> P5/32
+  - [9, 1, Index, [64, 1]] # 19: enhanced IR P2
+  - [-1, 1, Conv, [256, 3, 2]] # 20-P3/8
+  - [-1, 2, C3k2, [512, False, 0.25]] # 21-IR P3
+  - [-1, 1, Conv, [512, 3, 2]] # 22-P4/16
+  - [-1, 2, C3k2, [512, True]] # 23-IR P4
+  - [-1, 1, Conv, [1024, 3, 2]] # 24-P5/32
+  - [-1, 2, C3k2, [1024, True]] # 25
+  - [-1, 1, SPPF, [1024, 5]] # 26
+  - [-1, 2, C2PSA, [1024]] # 27-IR P5
+
+  # Keep the current rgbir_dual adaptive middle fusion unchanged
+  - [[12, 21], 1, AdaptiveFeatureFusion, []] # 28-fused P3/8
+  - [[14, 23], 1, AdaptiveFeatureFusion, []] # 29-fused P4/16
+  - [[18, 27], 1, AdaptiveFeatureFusion, []] # 30-fused P5/32
+
+# Shared original YOLO11 neck and OBB head
+head:
+  - [30, 1, nn.Upsample, [None, 2, "nearest"]] # 31
+  - [[-1, 29], 1, Concat, [1]] # 32: fused P4
+  - [-1, 2, C3k2, [512, False]] # 33
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 34
+  - [[-1, 28], 1, Concat, [1]] # 35: fused P3
+  - [-1, 2, C3k2, [256, False]] # 36 (P3/8-small)
+
+  - [-1, 1, Conv, [256, 3, 2]] # 37
+  - [[-1, 33], 1, Concat, [1]] # 38
+  - [-1, 2, C3k2, [512, False]] # 39 (P4/16-medium)
+
+  - [-1, 1, Conv, [512, 3, 2]] # 40
+  - [[-1, 30], 1, Concat, [1]] # 41
+  - [-1, 2, C3k2, [1024, True]] # 42 (P5/32-large)
+
+  - [[36, 39, 42], 1, OBB, [nc, 1]] # 43 OBB(P3, P4, P5)

@@ -62,6 +62,7 @@ from ultralytics.nn.modules import (
     Pose,
     Pose26,
     RGBIRSplit,
+    ShallowCrossModalInteraction,
     RepC3,
     RepConv,
     SPDConv,
@@ -2118,12 +2119,13 @@ def parse_model(d, ch, verbose=True):
             c2 = ch[f]
             if c2 != 4:
                 raise ValueError(f"RGBIRSplit requires four input channels, got {c2}")
-        elif m is AdaptiveFeatureFusion:
+        elif m in frozenset({AdaptiveFeatureFusion, ShallowCrossModalInteraction}):
+            module_name = m.__name__
             if not isinstance(f, list) or len(f) != 2:
-                raise ValueError("AdaptiveFeatureFusion requires exactly two input layers")
+                raise ValueError(f"{module_name} requires exactly two input layers")
             input_channels = [ch[index] for index in f]
             if input_channels[0] != input_channels[1]:
-                raise ValueError(f"AdaptiveFeatureFusion input channels must match, got {input_channels}")
+                raise ValueError(f"{module_name} input channels must match, got {input_channels}")
             c2 = input_channels[0]
             args = [c2, *args]
         elif m is AIFI:

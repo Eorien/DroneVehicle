@@ -79,7 +79,11 @@ from .conv import (
     SpatialAttention,
 )
 from .deab import DEAB, DetailEnhancedConv
-from .fusion import AdaptiveFeatureFusion, RGBIRSplit
+from .fusion import (
+    AdaptiveFeatureFusion,
+    RGBIRSplit,
+    ShallowCrossModalInteraction,
+)
 from .head import (
     OBB,
     OBB26,
@@ -180,6 +184,7 @@ __all__ = (
     "Proto",
     "RTDETRDecoder",
     "RGBIRSplit",
+    "ShallowCrossModalInteraction",
     "RepC3",
     "RepConv",
     "SPDConv",

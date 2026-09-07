@@ -11,11 +11,16 @@ import cv2
 import numpy as np
 import torch
 
-from dronevehicle import RGBIRDataset, initialize_dual_stream, initialize_ir_channel
+from dronevehicle import (
+    RGBIRDataset,
+    initialize_dual_stream,
+    initialize_hybrid_stream,
+    initialize_ir_channel,
+)
 from ultralytics.cfg import DEFAULT_CFG
 from ultralytics.data.build import build_dataloader
 from ultralytics.data.utils import check_det_dataset
-from ultralytics.nn.modules import RGBIRSplit
+from ultralytics.nn.modules import RGBIRSplit, ShallowCrossModalInteraction
 from ultralytics.nn.tasks import OBBModel, load_checkpoint
 
 DEFAULT_MODEL = Path(
@@ -102,15 +107,26 @@ def check_weight_initialization(
     assert source.task == "obb" and source_weight.shape[1] == 3
     target = OBBModel(model_yaml, ch=4, nc=len(data["names"]), verbose=False)
     if isinstance(target.model[0], RGBIRSplit):
-        transferred = initialize_dual_stream(target, source)
+        is_hybrid = any(
+            isinstance(module, ShallowCrossModalInteraction) for module in target.model
+        )
+        transferred = (
+            initialize_hybrid_stream(target, source)
+            if is_hybrid
+            else initialize_dual_stream(target, source)
+        )
         target_state = target.state_dict()
+        ir_first_key = "model.6.conv.weight" if is_hybrid else "model.14.conv.weight"
         assert transferred > 0
         assert torch.equal(target_state["model.2.conv.weight"], source_weight)
         assert torch.equal(
-            target_state["model.14.conv.weight"],
+            target_state[ir_first_key],
             source_weight.mean(dim=1, keepdim=True),
         )
-        print("dual RGB/IR backbone transfer and equal-gate initialization: OK")
+        stream_name = "Hybrid" if is_hybrid else "dual"
+        print(
+            f"{stream_name} RGB/IR backbone transfer and adaptive-gate initialization: OK"
+        )
     else:
         target.load(source, verbose=False)
         assert initialize_ir_channel(target, source)
@@ -158,7 +174,15 @@ def check_augmented_forward(
             output = model(images)
         if isinstance(model.model[0], RGBIRSplit):
             assert model.model[2].conv.weight.shape[1] == 3
-            assert model.model[14].conv.weight.shape[1] == 1
+            ir_first_index = (
+                6
+                if any(
+                    isinstance(module, ShallowCrossModalInteraction)
+                    for module in model.model
+                )
+                else 14
+            )
+            assert model.model[ir_first_index].conv.weight.shape[1] == 1
             input_description = "RGB first conv: 3 channels; IR first conv: 1 channel"
         else:
             assert model.model[0].conv.weight.shape[1] == 4

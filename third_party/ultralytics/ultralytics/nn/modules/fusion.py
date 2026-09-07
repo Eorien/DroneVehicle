@@ -6,7 +6,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-__all__ = ("AdaptiveFeatureFusion", "RGBIRSplit")
+__all__ = ("AdaptiveFeatureFusion", "RGBIRSplit", "ShallowCrossModalInteraction")
 
 
 class RGBIRSplit(nn.Module):
@@ -17,6 +17,44 @@ class RGBIRSplit(nn.Module):
         if x.ndim != 4 or x.shape[1] != 4:
             raise ValueError(f"RGBIRSplit expects NCHW input with 4 channels, got {tuple(x.shape)}")
         return x[:, :3], x[:, 3:4]
+
+
+class ShallowCrossModalInteraction(nn.Module):
+    """Inject one shared shallow representation into two residual modality streams."""
+
+    def __init__(self, channels: int) -> None:
+        """Initialize shared 1x1 mixing and zero-output RGB/IR projections."""
+        super().__init__()
+        if channels <= 0:
+            raise ValueError(f"channels must be positive, got {channels}")
+        self.channels = channels
+        # Keep all later random initialization identical to the pure dual-stream model.
+        with torch.random.fork_rng(devices=[]):
+            self.shared = nn.Conv2d(channels * 2, channels, 1, bias=True)
+            self.project_rgb = nn.Conv2d(channels, channels, 1, bias=True)
+            self.project_ir = nn.Conv2d(channels, channels, 1, bias=True)
+            nn.init.zeros_(self.project_rgb.weight)
+            nn.init.zeros_(self.project_rgb.bias)
+            nn.init.zeros_(self.project_ir.weight)
+            nn.init.zeros_(self.project_ir.bias)
+
+    def forward(
+        self, features: list[torch.Tensor] | tuple[torch.Tensor, torch.Tensor]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return zero-perturbation residual enhancements for RGB and IR features."""
+        if not isinstance(features, (list, tuple)) or len(features) != 2:
+            raise ValueError("ShallowCrossModalInteraction expects exactly [rgb, infrared]")
+        rgb, infrared = features
+        if rgb.shape != infrared.shape:
+            raise ValueError(
+                f"RGB and IR shallow feature shapes must match, got {tuple(rgb.shape)} and {tuple(infrared.shape)}"
+            )
+        if rgb.ndim != 4 or rgb.shape[1] != self.channels:
+            raise ValueError(
+                f"ShallowCrossModalInteraction expects NCHW features with {self.channels} channels, got {tuple(rgb.shape)}"
+            )
+        shared = self.shared(torch.cat((rgb, infrared), dim=1))
+        return rgb + self.project_rgb(shared), infrared + self.project_ir(shared)
 
 
 class AdaptiveFeatureFusion(nn.Module):

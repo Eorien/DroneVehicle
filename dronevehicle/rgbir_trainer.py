@@ -10,7 +10,7 @@ from torch import nn
 
 from ultralytics.data.utils import get_split_fraction
 from ultralytics.models.yolo.obb.train import OBBTrainer
-from ultralytics.nn.modules import RGBIRSplit
+from ultralytics.nn.modules import RGBIRSplit, ShallowCrossModalInteraction
 from ultralytics.nn.tasks import OBBModel
 from ultralytics.utils import LOGGER, RANK
 from ultralytics.utils.torch_utils import unwrap_model
@@ -78,6 +78,17 @@ def _dual_destination_indices(source_index: int) -> tuple[int, ...]:
     return ()
 
 
+def _hybrid_destination_indices(source_index: int) -> tuple[int, ...]:
+    """Map one official YOLO11 layer index to the Hybrid Fusion layout."""
+    if 0 <= source_index <= 2:
+        return source_index + 2, source_index + 6
+    if 3 <= source_index <= 10:
+        return source_index + 8, source_index + 17
+    if 11 <= source_index <= 23:
+        return (source_index + 20,)
+    return ()
+
+
 def initialize_dual_stream(model: OBBModel, weights: Any) -> int:
     """Explicitly initialize RGB/IR backbones and the shared head from one RGB checkpoint."""
     source = _source_model(weights)
@@ -87,6 +98,14 @@ def initialize_dual_stream(model: OBBModel, weights: Any) -> int:
         raise TypeError(
             "Dual-stream initialization requires RGBIRSplit at model layer 0"
         )
+    is_hybrid = any(
+        isinstance(module, ShallowCrossModalInteraction) for module in model.model
+    )
+    destination_indices = (
+        _hybrid_destination_indices if is_hybrid else _dual_destination_indices
+    )
+    ir_first_index = 6 if is_hybrid else 14
+    fusion_indices = (28, 29, 30) if is_hybrid else (25, 26, 27)
 
     source_state = source.float().state_dict()
     target_state = model.state_dict()
@@ -100,7 +119,7 @@ def initialize_dual_stream(model: OBBModel, weights: Any) -> int:
             continue
         source_index = int(match.group(1))
         suffix = match.group(2)
-        for destination_index in _dual_destination_indices(source_index):
+        for destination_index in destination_indices(source_index):
             destination_key = f"model.{destination_index}.{suffix}"
             if destination_key not in target_state:
                 skipped.append(f"{source_key} -> {destination_key} (missing target)")
@@ -108,7 +127,7 @@ def initialize_dual_stream(model: OBBModel, weights: Any) -> int:
             target_tensor = target_state[destination_key]
             if (
                 source_index == 0
-                and destination_index == 14
+                and destination_index == ir_first_index
                 and suffix == "conv.weight"
             ):
                 if source_tensor.shape[1] != 3 or target_tensor.shape[1] != 1:
@@ -135,7 +154,7 @@ def initialize_dual_stream(model: OBBModel, weights: Any) -> int:
         for source_key in source_state
         if (match := re.match(r"^model\.(\d+)\.(.+)$", source_key))
         and int(match.group(1)) <= 10
-        for destination_index in _dual_destination_indices(int(match.group(1)))
+        for destination_index in destination_indices(int(match.group(1)))
     }
     missing_backbone = sorted(expected_backbone_targets - backbone_targets)
     if missing_backbone:
@@ -150,8 +169,9 @@ def initialize_dual_stream(model: OBBModel, weights: Any) -> int:
     )
     if not torch.equal(loaded_state["model.2.conv.weight"], source_first):
         raise RuntimeError("RGB branch first convolution was not transferred exactly")
+    ir_first_key = f"model.{ir_first_index}.conv.weight"
     if not torch.equal(
-        loaded_state["model.14.conv.weight"], source_first.mean(dim=1, keepdim=True)
+        loaded_state[ir_first_key], source_first.mean(dim=1, keepdim=True)
     ):
         raise RuntimeError(
             "IR branch first convolution was not initialized as the RGB mean"
@@ -159,7 +179,7 @@ def initialize_dual_stream(model: OBBModel, weights: Any) -> int:
     fusion_tensors = [
         tensor
         for key, tensor in loaded_state.items()
-        if key.startswith(("model.25.gate.", "model.26.gate.", "model.27.gate."))
+        if any(key.startswith(f"model.{index}.gate.") for index in fusion_indices)
     ]
     if not fusion_tensors or any(
         torch.count_nonzero(tensor) for tensor in fusion_tensors
@@ -167,6 +187,18 @@ def initialize_dual_stream(model: OBBModel, weights: Any) -> int:
         raise RuntimeError(
             "Adaptive fusion gates must start at exactly 0.5 via zero logits"
         )
+    if is_hybrid:
+        projection_tensors = [
+            tensor
+            for key, tensor in loaded_state.items()
+            if key.startswith(("model.9.project_rgb.", "model.9.project_ir."))
+        ]
+        if not projection_tensors or any(
+            torch.count_nonzero(tensor) for tensor in projection_tensors
+        ):
+            raise RuntimeError(
+                "Hybrid residual projections must start at zero perturbation"
+            )
 
     LOGGER.info(
         f"Transferred {len(transferred)}/{len(target_state)} target state items "
@@ -176,12 +208,25 @@ def initialize_dual_stream(model: OBBModel, weights: Any) -> int:
         "Initialized IR branch input convolution as the mean of pretrained RGB weights"
     )
     LOGGER.info("Initialized P3/P4/P5 adaptive fusion gates to equal RGB/IR weighting")
+    if is_hybrid:
+        LOGGER.info(
+            "Initialized shallow RGB/IR residual projections to zero perturbation"
+        )
     if skipped:
         LOGGER.info(
             f"Skipped {len(skipped)} incompatible mapped items (expected task-head differences): "
             + "; ".join(skipped)
         )
     return len(transferred)
+
+
+def initialize_hybrid_stream(model: OBBModel, weights: Any) -> int:
+    """Initialize a Hybrid Fusion model while preserving the pure dual-stream mapping."""
+    if not any(
+        isinstance(module, ShallowCrossModalInteraction) for module in model.model
+    ):
+        raise TypeError("Hybrid initialization requires ShallowCrossModalInteraction")
+    return initialize_dual_stream(model, weights)
 
 
 class RGBIROBBTrainer(OBBTrainer):
@@ -227,7 +272,13 @@ class RGBIROBBTrainer(OBBTrainer):
         )
         if isinstance(model.model[0], RGBIRSplit):
             if weights is not None:
-                initialize_dual_stream(model, weights)
+                if any(
+                    isinstance(module, ShallowCrossModalInteraction)
+                    for module in model.model
+                ):
+                    initialize_hybrid_stream(model, weights)
+                else:
+                    initialize_dual_stream(model, weights)
             return model
 
         if weights is not None:
